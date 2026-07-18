@@ -1,0 +1,14 @@
+# Environment secrets - never commit these
+.env
+backend/.env
+backend/firebase-service-account.json
+
+# Python
+backend/venv/
+backend/__pycache__/
+backend/services/__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
