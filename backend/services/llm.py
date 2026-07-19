@@ -16,7 +16,7 @@ from typing import List, Dict
 import requests
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "llama-3.3-70b-versatile"  # free tier model on Groq
 
 
 def build_prompt(claim: str, web_evidence: List[Dict], fact_check_matches: List[Dict], reply_language: str = "auto") -> str:
@@ -92,3 +92,76 @@ inside the "explanation" string value itself - that is fine and expected:
 
 {{
   "verdict": "True" | "False" | "Misleading" | "Unverified",
+  "confidence": <integer 0-100>,
+  "explanation": "<the detailed, multi-paragraph explanation with **bold headings** as described above, using \\n\\n between sections>",
+  "sources": ["<url1>", "<url2>", ...]
+}}
+"""
+    return prompt
+
+
+def get_verdict(claim: str, web_evidence: List[Dict], fact_check_matches: List[Dict], reply_language: str = "auto") -> Dict:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+
+    if not api_key:
+        return {
+            "verdict": "Unverified",
+            "confidence": 0,
+            "explanation": "GROQ_API_KEY is not set, so no AI reasoning was performed.",
+            "sources": [],
+        }
+
+    prompt = build_prompt(claim, web_evidence, fact_check_matches, reply_language)
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1200,
+    }
+
+    try:
+        resp = requests.post(GROQ_ENDPOINT, headers=headers, json=body, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        raw_text = data["choices"][0]["message"]["content"].strip()
+
+        # Strip accidental markdown code fences if the model adds them
+        if raw_text.startswith("```"):
+            raw_text = raw_text.strip("`")
+            if raw_text.lower().startswith("json"):
+                raw_text = raw_text[4:].strip()
+
+        parsed = json.loads(raw_text)
+        return parsed
+
+    except json.JSONDecodeError:
+        # Common failure: the model put real line breaks inside the
+        # "explanation" string instead of escaped \n. Try to repair by
+        # escaping stray newlines that are inside string values, then
+        # parse again before giving up.
+        try:
+            repaired = re.sub(r'(?<!\\)\n', r'\\n', raw_text)
+            parsed = json.loads(repaired)
+            return parsed
+        except Exception as e2:
+            return {
+                "verdict": "Unverified",
+                "confidence": 0,
+                "explanation": f"The AI response could not be parsed as JSON: {e2}",
+                "sources": [],
+            }
+    except Exception as e:
+        return {
+            "verdict": "Unverified",
+            "confidence": 0,
+            "explanation": f"Error calling Groq API: {e}",
+            "sources": [],
+        }
