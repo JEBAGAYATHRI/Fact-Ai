@@ -58,24 +58,33 @@ LANGUAGE INSTRUCTION: {language_instruction}
 Keep "verdict" as one of the exact English words listed below regardless of
 the reply language, since the app uses that field to pick a color/icon.
 
-EXPLANATION STYLE: Do NOT write a short 2-4 sentence answer. Write a detailed,
-well-structured explanation, similar to a thorough analyst's report. Use
-**bold section headings** (using two asterisks around each heading, like
-**What the evidence shows**) so the structure is clear, followed by the
-content for that section on the next line. Include these sections in order:
+EXPLANATION STYLE: Do NOT write a short 2-4 sentence answer, and do NOT
+restate the verdict itself (that's already shown separately). Write a
+detailed explanation broken into exactly these four sections, in this
+order, each starting with the exact bolded heading shown (two asterisks
+around each heading, nothing else on that line):
 
-**Verdict** - one short line stating the verdict plainly.
-**What the evidence shows** - a breakdown of the key facts found in the
-search results and fact-check matches, referencing what different sources say.
-**Why this matters** - any nuance, common misconceptions, or related context
-that helps the reader understand the bigger picture.
-**Summary** - a concise closing line.
+**Key Evidence**
+2-4 sentences on the strongest facts found in the search results and
+fact-check matches, referencing what different sources say.
 
-Separate each heading and its content, and each section from the next, with
-blank lines (\\n\\n) so they read as clear paragraphs. Aim for genuine depth
-and usefulness, not padding - every sentence should add real information.
-If the evidence is thin, be honest about that limitation rather than
-inventing detail.
+**Missing Evidence**
+1-3 sentences on what's NOT confirmed, contradictory, or still uncertain.
+If the evidence is fully conclusive either way, say so honestly here
+instead of inventing a gap.
+
+**Why It Matters**
+1-3 sentences of context, common misconceptions, or bigger-picture
+relevance for the reader.
+
+**Final Summary**
+One concise closing line.
+
+Separate each heading from its body text, and each section from the next,
+with blank lines (\\n\\n) so they read as clear paragraphs. Use **bold**
+around specific important keywords or facts within the body text too,
+not just the section headings. Aim for genuine depth and usefulness, not
+padding - every sentence should add real information.
 
 CLAIM TO EVALUATE:
 "{claim}"
@@ -93,7 +102,7 @@ inside the "explanation" string value itself - that is fine and expected:
 {{
   "verdict": "True" | "False" | "Misleading" | "Unverified",
   "confidence": <integer 0-100>,
-  "explanation": "<the detailed, multi-paragraph explanation with **bold headings** as described above, using \\n\\n between sections>",
+  "explanation": "<the four-section explanation described above: **Key Evidence**, **Missing Evidence**, **Why It Matters**, **Final Summary**, using \\n\\n between sections>",
   "sources": ["<url1>", "<url2>", ...]
 }}
 """

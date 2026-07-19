@@ -80,15 +80,15 @@ const c = {
 };
 
 const fontSans =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+  "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 const fontMono =
   "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const VERDICT_META = {
-  True: { color: c.true, label: "TRUE", Icon: CheckCircle2 },
-  False: { color: c.false, label: "FALSE", Icon: XCircle },
-  Misleading: { color: c.mislead, label: "MISLEADING", Icon: AlertTriangle },
-  Unverified: { color: c.unverified, label: "UNVERIFIED", Icon: HelpCircle },
+  True: { color: c.true, label: "TRUE", Icon: CheckCircle2, emoji: "🟢" },
+  False: { color: c.false, label: "FALSE", Icon: XCircle, emoji: "🔴" },
+  Misleading: { color: c.mislead, label: "MISLEADING", Icon: AlertTriangle, emoji: "🟡" },
+  Unverified: { color: c.unverified, label: "UNVERIFIED", Icon: HelpCircle, emoji: "⚪" },
 };
 
 const SECURITY_FAQ = [
@@ -329,6 +329,62 @@ function FadeInOnView({ children, delay = 0 }) {
   );
 }
 
+function TypewriterText({ text, speedMs = 12 }) {
+  const [shown, setShown] = useState("");
+  const plain = (text || "").replace(/\*\*/g, "");
+
+  React.useEffect(() => {
+    const reduceMotion =
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduceMotion) {
+      setShown(plain);
+      return;
+    }
+
+    setShown("");
+    let i = 0;
+    const step = Math.max(1, Math.round(plain.length / 120));
+    const interval = setInterval(() => {
+      i += step;
+      setShown(plain.slice(0, i));
+      if (i >= plain.length) clearInterval(interval);
+    }, speedMs);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  const done = shown.length >= plain.length;
+  return done ? <BoldText text={text} /> : <>{shown}</>;
+}
+
+const SECTION_DEFS = [
+  { key: "keyEvidence", heading: "Key Evidence", emoji: "🔍", color: "#2554F0" },
+  { key: "missingEvidence", heading: "Missing Evidence", emoji: "⚠️", color: "#C98A1E" },
+  { key: "whyItMatters", heading: "Why It Matters", emoji: "💡", color: "#7C3AED" },
+  { key: "finalSummary", heading: "Final Summary", emoji: "📌", color: "#1B8A5A" },
+];
+
+function parseExplanationSections(text) {
+  if (!text) return [];
+  const headingNames = SECTION_DEFS.map((s) => s.heading).join("|");
+  const re = new RegExp(`\\*\\*(${headingNames})\\*\\*`, "g");
+  const parts = text.split(re);
+  // parts alternates: [preamble, heading, body, heading, body, ...]
+  const sections = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const heading = parts[i]?.trim();
+    const body = parts[i + 1]?.trim();
+    const def = SECTION_DEFS.find((s) => s.heading === heading);
+    if (def && body) sections.push({ ...def, body });
+  }
+  // Fallback: if the model didn't use the expected headings, show it all as one section.
+  if (sections.length === 0 && text.trim()) {
+    return [{ key: "raw", heading: "Summary", emoji: "📌", color: "#2554F0", body: text.trim() }];
+  }
+  return sections;
+}
+
 function BoldText({ text }) {
   if (!text) return null;
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -517,11 +573,21 @@ function FactAICore() {
       }}
     >
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
         @keyframes wave {
           0%, 100% { height: 6px; }
           50% { height: 26px; }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .result-card {
+          animation: cardIn 0.4s ease forwards;
+          opacity: 0;
+        }
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
@@ -872,70 +938,161 @@ function FactAICore() {
         )}
 
         {status === "done" && result && (
-          <div style={{ animation: "fadeUp 0.3s ease" }}>
+          <div>
+            {/* Verdict card */}
             <div
+              className="result-card"
+              style={{
+                background: c.surface,
+                border: `1px solid ${c.border}`,
+                borderLeft: `4px solid ${meta.color}`,
+                borderRadius: 16,
+                padding: "20px 24px",
+                marginBottom: 14,
+                boxShadow: "0 2px 10px rgba(17,19,24,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22 }}>{meta.emoji}</span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: c.muted,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Verdict
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: meta.color,
+                  letterSpacing: "-0.01em",
+                  marginTop: 4,
+                }}
+              >
+                {meta.label}
+              </div>
+            </div>
+
+            {/* Confidence card */}
+            <div
+              className="result-card"
               style={{
                 background: c.surface,
                 border: `1px solid ${c.border}`,
                 borderRadius: 16,
-                padding: 24,
-                marginBottom: 28,
+                padding: "20px 24px",
+                marginBottom: 14,
+                boxShadow: "0 2px 10px rgba(17,19,24,0.04)",
+                animationDelay: "80ms",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 16,
-                  flexWrap: "wrap",
-                  gap: 12,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <meta.Icon size={26} color={meta.color} />
-                  <span
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 700,
-                      letterSpacing: "-0.01em",
-                      color: meta.color,
-                    }}
-                  >
-                    {meta.label}
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Waveform active={false} color={meta.color} />
-                  <span style={{ fontFamily: fontMono, fontSize: 13, color: c.muted }}>
-                    {result.confidence ?? 0}% confidence
-                  </span>
-                </div>
-              </div>
-
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 15,
-                  lineHeight: 1.7,
-                  color: c.text,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                <BoldText text={result.explanation} />
-              </p>
-
-              {result.sources && result.sources.length > 0 && (
-                <div
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 20 }}>📊</span>
+                <span
                   style={{
-                    marginTop: 18,
-                    paddingTop: 16,
-                    borderTop: `1px solid ${c.border}`,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: c.muted,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
                   }}
                 >
+                  Confidence
+                </span>
+                <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: 15, color: c.text }}>
+                  {result.confidence ?? 0}%
+                </span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: c.brandSoft, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${result.confidence ?? 0}%`,
+                    height: "100%",
+                    background: meta.color,
+                    borderRadius: 4,
+                    transition: "width 0.6s ease",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Section cards */}
+            {parseExplanationSections(result.explanation).map((sec, i) => (
+              <div
+                key={sec.key}
+                className="result-card"
+                style={{
+                  background: c.surface,
+                  border: `1px solid ${c.border}`,
+                  borderRadius: 16,
+                  padding: "20px 24px",
+                  marginBottom: 14,
+                  boxShadow: "0 2px 10px rgba(17,19,24,0.04)",
+                  animationDelay: `${160 + i * 90}ms`,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 20 }}>{sec.emoji}</span>
+                  <span
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: sec.color,
+                      letterSpacing: "-0.005em",
+                    }}
+                  >
+                    {sec.heading}
+                  </span>
+                </div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 14.5,
+                    lineHeight: 1.7,
+                    color: c.text,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  <TypewriterText text={sec.body} />
+                </p>
+              </div>
+            ))}
+
+            {/* Sources card */}
+            {result.sources && result.sources.length > 0 && (
+              <div
+                className="result-card"
+                style={{
+                  background: c.surface,
+                  border: `1px solid ${c.border}`,
+                  borderRadius: 16,
+                  padding: "20px 24px",
+                  marginBottom: 14,
+                  boxShadow: "0 2px 10px rgba(17,19,24,0.04)",
+                  animationDelay: "540ms",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 18 }}>🔗</span>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: c.muted,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                    }}
+                  >
+                    Sources
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {result.sources.map((src, i) => (
                     <a
                       key={i}
@@ -956,8 +1113,8 @@ function FactAICore() {
                     </a>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {evidence.length > 0 && (
               <div>
