@@ -3,6 +3,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCustomToken,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -407,7 +409,7 @@ function FactAICore() {
       const res = await fetch(`${API_BASE}/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: trimmed }),
+        body: JSON.stringify({ claim: trimmed, language: lang }),
       });
       if (!res.ok) throw new Error(`Server responded with ${res.status}`);
       const data = await res.json();
@@ -1342,6 +1344,10 @@ function PasswordField({ value, onChange, placeholder }) {
   );
 }
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 function LoginScreen({ onLogin, goTo }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1384,6 +1390,13 @@ function LoginScreen({ onLogin, goTo }) {
   async function handleGoogleLogin() {
     setLoading(true);
     setError("");
+
+    if (isMobileDevice()) {
+      // Popups are unreliable on mobile browsers - redirect works everywhere.
+      signInWithRedirect(auth, googleProvider);
+      return;
+    }
+
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       onLogin({
@@ -1491,6 +1504,12 @@ function SignupScreen({ goTo, onSignup }) {
   async function handleGoogleSignup() {
     setLoading(true);
     setError("");
+
+    if (isMobileDevice()) {
+      signInWithRedirect(auth, googleProvider);
+      return;
+    }
+
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       onSignup({
@@ -2082,7 +2101,13 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   // Restore an existing Firebase session on page load, if there is one.
+  // Also catches the result of a mobile Google sign-in redirect.
   React.useEffect(() => {
+    getRedirectResult(auth).catch(() => {
+      // Errors here are rare (e.g. account-exists-with-different-credential);
+      // the login/signup screens will simply show the normal login form again.
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser({
