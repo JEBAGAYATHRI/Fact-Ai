@@ -19,7 +19,7 @@ GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
-def build_prompt(claim: str, web_evidence: List[Dict], fact_check_matches: List[Dict]) -> str:
+def build_prompt(claim: str, web_evidence: List[Dict], fact_check_matches: List[Dict], reply_language: str = "auto") -> str:
     evidence_text = ""
 
     if fact_check_matches:
@@ -43,33 +43,39 @@ def build_prompt(claim: str, web_evidence: List[Dict], fact_check_matches: List[
     if not evidence_text:
         evidence_text = "No evidence was found from search or fact-check databases."
 
+    if reply_language == "ta":
+        language_instruction = 'Write your "explanation" field entirely in Tamil, regardless of what language the claim below is written in.'
+    elif reply_language == "en":
+        language_instruction = 'Write your "explanation" field entirely in English, regardless of what language the claim below is written in.'
+    else:
+        language_instruction = 'Detect the language of the CLAIM below. If it is written in Tamil (Tamil script), write your "explanation" field entirely in Tamil. If it is written in English, write your "explanation" field entirely in English.'
+
     prompt = f"""You are a fact-checking assistant. Your job is to evaluate a claim
 using ONLY the evidence provided below. Do not use any outside knowledge.
 If the evidence is insufficient or contradictory, say so honestly.
 
-LANGUAGE INSTRUCTION: Detect the language of the CLAIM below. If it is written
-in Tamil (Tamil script), write your "explanation" field entirely in Tamil.
-If it is written in English, write your "explanation" field entirely in English.
+LANGUAGE INSTRUCTION: {language_instruction}
 Keep "verdict" as one of the exact English words listed below regardless of
-the claim's language, since the app uses that field to pick a color/icon.
+the reply language, since the app uses that field to pick a color/icon.
 
 EXPLANATION STYLE: Do NOT write a short 2-4 sentence answer. Write a detailed,
-well-structured explanation, similar to a thorough analyst's report. Include,
-using plain text with line breaks between parts (no markdown symbols like
-** or #, since this will be displayed as plain text):
+well-structured explanation, similar to a thorough analyst's report. Use
+**bold section headings** (using two asterisks around each heading, like
+**What the evidence shows**) so the structure is clear, followed by the
+content for that section on the next line. Include these sections in order:
 
-1. A short opening line stating the verdict plainly.
-2. "What the evidence shows" - a breakdown of the key facts found in the
-   search results and fact-check matches, referencing what different sources
-   say.
-3. "Why this matters" or relevant context - any nuance, common misconceptions,
-   or related context that helps the reader understand the bigger picture.
-4. A concise closing summary line.
+**Verdict** - one short line stating the verdict plainly.
+**What the evidence shows** - a breakdown of the key facts found in the
+search results and fact-check matches, referencing what different sources say.
+**Why this matters** - any nuance, common misconceptions, or related context
+that helps the reader understand the bigger picture.
+**Summary** - a concise closing line.
 
-Separate these parts with blank lines (\\n\\n) so they read as clear paragraphs.
-Aim for genuine depth and usefulness, not padding - every sentence should add
-real information. If the evidence is thin, be honest about that limitation
-rather than inventing detail.
+Separate each heading and its content, and each section from the next, with
+blank lines (\\n\\n) so they read as clear paragraphs. Aim for genuine depth
+and usefulness, not padding - every sentence should add real information.
+If the evidence is thin, be honest about that limitation rather than
+inventing detail.
 
 CLAIM TO EVALUATE:
 "{claim}"
@@ -77,78 +83,12 @@ CLAIM TO EVALUATE:
 EVIDENCE:
 {evidence_text}
 
-Respond with ONLY a valid JSON object (no markdown, no code fences, no extra text),
-in exactly this format. IMPORTANT: this must be valid JSON - any line breaks
-inside the "explanation" text must be written as the two characters backslash-n
-(\\n), NOT as an actual line break, or the response will fail to parse:
+Respond with ONLY a valid JSON object (no code fences wrapping the whole
+response, no extra text outside the JSON). IMPORTANT: this must be valid
+JSON - any line breaks inside the "explanation" text must be written as the
+two characters backslash-n (\\n), NOT as an actual line break, or the
+response will fail to parse. The **bold headings** described above belong
+inside the "explanation" string value itself - that is fine and expected:
 
 {{
   "verdict": "True" | "False" | "Misleading" | "Unverified",
-  "confidence": <integer 0-100>,
-  "explanation": "<a detailed, multi-paragraph explanation as described above, using \\n\\n between paragraphs>",
-  "sources": ["<url1>", "<url2>", ...]
-}}
-"""
-    return prompt
-
-
-def get_verdict(claim: str, web_evidence: List[Dict], fact_check_matches: List[Dict]) -> Dict:
-    api_key = os.getenv("GROQ_API_KEY", "").strip()
-
-    if not api_key:
-        return {
-            "verdict": "Unverified",
-            "confidence": 0,
-            "explanation": "GROQ_API_KEY is not set, so no AI reasoning was performed.",
-            "sources": [],
-        }
-
-    prompt = build_prompt(claim, web_evidence, fact_check_matches)
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    body = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.2,
-        "max_tokens": 1200,
-    }
-
-    try:
-        resp = requests.post(GROQ_ENDPOINT, headers=headers, json=body, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        raw_text = data["choices"][0]["message"]["content"].strip()
-
-        if raw_text.startswith("```"):
-            raw_text = raw_text.strip("`")
-            if raw_text.lower().startswith("json"):
-                raw_text = raw_text[4:].strip()
-
-        parsed = json.loads(raw_text)
-        return parsed
-
-    except json.JSONDecodeError:
-        try:
-            repaired = re.sub(r'(?<!\\)\n', r'\\n', raw_text)
-            parsed = json.loads(repaired)
-            return parsed
-        except Exception as e2:
-            return {
-                "verdict": "Unverified",
-                "confidence": 0,
-                "explanation": f"The AI response could not be parsed as JSON: {e2}",
-                "sources": [],
-            }
-    except Exception as e:
-        return {
-            "verdict": "Unverified",
-            "confidence": 0,
-            "explanation": f"Error calling Groq API: {e}",
-            "sources": [],
-        }

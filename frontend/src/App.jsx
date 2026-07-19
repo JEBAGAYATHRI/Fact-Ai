@@ -329,6 +329,25 @@ function FadeInOnView({ children, delay = 0 }) {
   );
 }
 
+function BoldText({ text }) {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return (
+            <strong key={i} style={{ fontWeight: 700 }}>
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+      })}
+    </>
+  );
+}
+
 function Waveform({ active, color }) {
   const bars = 24;
   return (
@@ -903,7 +922,7 @@ function FactAICore() {
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {result.explanation}
+                <BoldText text={result.explanation} />
               </p>
 
               {result.sources && result.sources.length > 0 && (
